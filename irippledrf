@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>DRF Licensing & BIR Approval Portal</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- PapaParse for CSV parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .tab-active { bg-blue-600 text-white font-bold; }
+    .tab-inactive { bg-slate-100 text-slate-600 font-medium; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans min-h-screen">
+
+  <div id="app" class="p-4 md:p-8 max-w-7xl mx-auto space-y-6">
+    
+    <!-- Top Header -->
+    <header class="flex flex-wrap justify-between items-center pb-4 border-b border-slate-200 gap-4">
+      <div>
+        <h1 class="text-2xl font-black tracking-tight text-slate-900">DRF Approval & Licensing System</h1>
+        <p class="text-xs text-slate-500 font-medium">Dongleless POS License & BIR Permit Workflow Management</p>
+      </div>
+      
+      <!-- User Profile & Navigation Header -->
+      <div id="user-nav" class="flex items-center gap-3 hidden">
+        <div class="text-right">
+          <div id="user-display-name" class="text-xs font-bold text-slate-800"></div>
+          <div id="user-display-role" class="text-[11px] text-blue-600 font-semibold bg-blue-50 px-2 py-0.5 rounded border border-blue-100 inline-block"></div>
+        </div>
+        <button onclick="openProfileModal()" class="px-3 py-1.5 text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-semibold rounded-lg transition">Profile</button>
+        <button onclick="handleLogout()" class="px-3 py-1.5 text-xs bg-red-50 hover:bg-red-100 text-red-600 font-semibold rounded-lg transition border border-red-200">Logout</button>
+      </div>
+    </header>
+
+    <!-- AUTHENTICATION CARD -->
+    <div id="auth-card" class="max-w-md mx-auto bg-white p-6 md:p-8 rounded-2xl shadow-xl border border-slate-100">
+      <div class="text-center mb-6">
+        <h2 id="auth-title" class="text-xl font-bold text-slate-900">Sign In to DRF Portal</h2>
+        <p id="auth-subtitle" class="text-xs text-slate-500 mt-1">Enter your credential details to access your workflow stage.</p>
+      </div>
+
+      <form id="auth-form" onsubmit="handleAuth(event)" class="space-y-4">
+        <div id="name-field" class="hidden">
+          <label class="block text-xs font-bold text-slate-700 mb-1">Full Name *</label>
+          <input type="text" id="auth-name" class="w-full border border-slate-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="e.g. Maria Santos">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Email Address *</label>
+          <input type="email" id="auth-email" required class="w-full border border-slate-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="user@company.com">
+        </div>
+
+        <div>
+          <label class="block text-xs font-bold text-slate-700 mb-1">Password *</label>
+          <input type="password" id="auth-password" required class="w-full border border-slate-300 p-2.5 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="••••••••">
+        </div>
+
+        <button type="submit" id="auth-submit-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 rounded-lg text-sm shadow transition">Sign In</button>
+      </form>
+
+      <div class="mt-6 pt-4 border-t border-slate-100 text-center">
+        <button onclick="toggleAuthMode()" id="auth-toggle-btn" class="text-xs font-semibold text-blue-600 hover:underline">New staff member? Register here</button>
+      </div>
+    </div>
+
+    <!-- MAIN APP WORKSPACE -->
+    <div id="workspace" class="hidden space-y-6">
+
+      <!-- ADMIN USER MANAGEMENT CONSOLE -->
+      <section id="admin-console" class="bg-amber-50/80 border border-amber-200 p-5 rounded-2xl hidden space-y-4">
+        <div class="flex justify-between items-center">
+          <div>
+            <h3 class="text-sm font-bold text-amber-900 flex items-center gap-2">
+              Administrator User Console
+            </h3>
+            <p class="text-xs text-amber-700">Monitor sign-ups, assign roles & departments, and activate/deactivate accounts.</p>
+          </div>
+          <span class="text-[10px] bg-amber-200 text-amber-800 px-2 py-0.5 rounded-full font-bold">Admin Privileges Active</span>
+        </div>
+
+        <div class="overflow-x-auto bg-white rounded-xl border border-amber-200 shadow-sm">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-amber-100/50 border-b border-amber-200 text-amber-900">
+              <tr>
+                <th class="p-3">User & Email</th>
+                <th class="p-3">Group / Department</th>
+                <th class="p-3">Assigned Role</th>
+                <th class="p-3">Status</th>
+                <th class="p-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="user-table-body" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- NAVIGATION TABS -->
+      <div class="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+        <button onclick="switchTab('submit')" class="tab-btn px-4 py-2 text-xs font-bold rounded-lg transition" id="tab-submit">1. DRF Intake & Attestation</button>
+        <button onclick="switchTab('queue')" class="tab-btn px-4 py-2 text-xs font-bold rounded-lg transition" id="tab-queue">2. Approval & Liaison Queue</button>
+        <button onclick="switchTab('master')" class="tab-btn px-4 py-2 text-xs font-bold rounded-lg transition" id="tab-master">3. Master Registry</button>
+      </div>
+
+      <!-- STAGE 1: INTAKE & CSV ATTESTATION FORM -->
+      <section id="pane-submit" class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+        <div>
+          <h3 class="text-base font-bold text-slate-900">Stage 1: Verify & Upload DRF Request</h3>
+          <p class="text-xs text-slate-500 mt-0.5">Authorized Verifying Bodies: BD, BA, PM, and AM (Client Engagement Group).</p>
+        </div>
+
+        <!-- CSV Drag and Drop Box -->
+        <div class="p-6 border-2 border-dashed border-blue-200 rounded-xl bg-blue-50/40 text-center space-y-2">
+          <div class="text-xs text-slate-600 font-medium">Upload client-submitted DRF CSV file to auto-populate fields</div>
+          <input type="file" id="csv-file" accept=".csv" class="hidden" onchange="handleCSVUpload(event)">
+          <button type="button" onclick="document.getElementById('csv-file').click()" class="bg-blue-600 hover:bg-blue-700 text-white text-xs px-4 py-2 rounded-lg font-bold shadow-sm transition">Select CSV File</button>
+          <div id="file-name-display" class="text-xs font-bold text-slate-700"></div>
+        </div>
+
+        <!-- Form Inputs -->
+        <form id="drf-form" onsubmit="submitDRF(event)" class="space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">Company / Registered Name *</label>
+              <input type="text" id="drf-company" required class="w-full border border-slate-300 p-2.5 rounded-lg">
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">Branch Name *</label>
+              <input type="text" id="drf-branch" required class="w-full border border-slate-300 p-2.5 rounded-lg">
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">Trade / Business Name</label>
+              <input type="text" id="drf-trade" class="w-full border border-slate-300 p-2.5 rounded-lg">
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">TIN (Tax Identification Number) *</label>
+              <input type="text" id="drf-tin" required class="w-full border border-slate-300 p-2.5 rounded-lg">
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">Computer Name (Max 12 Alphanumeric) *</label>
+              <input type="text" id="drf-computer" maxlength="12" required class="w-full border border-slate-300 p-2.5 rounded-lg uppercase font-mono" placeholder="POS01">
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">POS Machine Serial No. *</label>
+              <input type="text" id="drf-serial" required class="w-full border border-slate-300 p-2.5 rounded-lg">
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">Machine Brand *</label>
+              <input type="text" id="drf-brand" required class="w-full border border-slate-300 p-2.5 rounded-lg">
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">Machine Model *</label>
+              <input type="text" id="drf-model" required class="w-full border border-slate-300 p-2.5 rounded-lg">
+            </div>
+            <div>
+              <label class="font-bold text-slate-700 block mb-1">Request Date</label>
+              <input type="date" id="drf-date" class="w-full border border-slate-300 p-2.5 rounded-lg">
+            </div>
+          </div>
+
+          <div class="p-3 bg-slate-50 border border-slate-200 rounded-lg flex items-center gap-3">
+            <input type="checkbox" id="drf-exec-flag" class="w-4 h-4 text-blue-600 rounded">
+            <div>
+              <label for="drf-exec-flag" class="text-xs font-bold text-slate-800 block">Require Executive Sponsor Approval</label>
+              <span class="text-[11px] text-slate-500">Optional: Check this if CEO/CTO/COO sign-off is required.</span>
+            </div>
+          </div>
+
+          <div class="p-3 bg-blue-50/50 border border-blue-100 rounded-lg flex items-center gap-3">
+            <input type="checkbox" id="drf-attest" required class="w-4 h-4 text-blue-600 rounded">
+            <label for="drf-attest" class="text-xs font-semibold text-blue-900">
+              I confirm as a verified body (BD/BA/PM/AM) that the hardware specs and client details above are attested.
+            </label>
+          </div>
+
+          <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-6 py-3 rounded-lg shadow-sm transition">
+            Verify & Submit to Approval Chain
+          </button>
+        </form>
+      </section>
+
+      <!-- STAGE 2 & 3: APPROVAL QUEUE -->
+      <section id="pane-queue" class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hidden space-y-4">
+        <h3 class="text-base font-bold text-slate-900">Active Workflow Queue</h3>
+        <div class="overflow-x-auto border border-slate-200 rounded-xl">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-100 border-b border-slate-200 text-slate-700">
+              <tr>
+                <th class="p-3">DRF ID</th>
+                <th class="p-3">Company / Branch</th>
+                <th class="p-3">Verified By</th>
+                <th class="p-3">VP Appr.</th>
+                <th class="p-3">Compliance Appr.</th>
+                <th class="p-3">Status</th>
+                <th class="p-3 text-right">Workflow Actions</th>
+              </tr>
+            </thead>
+            <tbody id="queue-table-body" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- STAGE 4: CONSOLIDATED MASTER REGISTRY TABLE -->
+      <section id="pane-master" class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm hidden space-y-4">
+        <div class="flex justify-between items-center flex-wrap gap-2">
+          <div>
+            <h3 class="text-base font-bold text-slate-900">Master Consolidated Sheet & Issued Licenses</h3>
+            <p class="text-xs text-slate-500">Centralized database of all finished DRFs, PTU permits, and license keys.</p>
+          </div>
+          <button onclick="exportMasterCSV()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg shadow-sm">Export Master Sheet (CSV)</button>
+        </div>
+
+        <div class="overflow-x-auto border border-slate-200 rounded-xl">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-900 text-slate-100">
+              <tr>
+                <th class="p-3">DRF ID</th>
+                <th class="p-3">Company Name</th>
+                <th class="p-3">TIN</th>
+                <th class="p-3">Computer Name</th>
+                <th class="p-3">POS MIN</th>
+                <th class="p-3">PTU Permit Number</th>
+                <th class="p-3">License Serial Key</th>
+                <th class="p-3">Tags & Status</th>
+                <th class="p-3 text-right">Print DRF</th>
+              </tr>
+            </thead>
+            <tbody id="master-table-body" class="divide-y divide-slate-100"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <!-- PROFILE MODAL -->
+  <div id="profile-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 hidden z-50">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4">
+      <div class="flex justify-between items-center border-b pb-3">
+        <h3 class="text-base font-bold text-slate-900">User Profile Settings</h3>
+        <button onclick="closeProfileModal()" class="text-slate-400 hover:text-slate-600 text-lg">&times;</button>
+      </div>
+
+      <form onsubmit="handleProfileUpdate(event)" class="space-y-3 text-xs">
+        <div>
+          <label class="font-bold text-slate-700 block mb-1">Full Name (Editable)</label>
+          <input type="text" id="profile-name" required class="w-full border p-2 rounded-lg">
+        </div>
+
+        <div>
+          <label class="font-bold text-slate-700 block mb-1">Email Address (Editable)</label>
+          <input type="email" id="profile-email" required class="w-full border p-2 rounded-lg">
+        </div>
+
+        <div>
+          <label class="font-bold text-slate-700 block mb-1">New Password (Optional)</label>
+          <input type="password" id="profile-password" placeholder="Leave blank to keep current" class="w-full border p-2 rounded-lg">
+        </div>
+
+        <div class="pt-2 border-t text-slate-500 space-y-1">
+          <div><strong>Group / Department:</strong> <span id="profile-dept-read"></span></div>
+          <div><strong>Assigned Role:</strong> <span id="profile-role-read"></span></div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" onclick="closeProfileModal()" class="px-4 py-2 bg-slate-100 font-bold rounded-lg text-slate-600">Cancel</button>
+          <button type="submit" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-lg">Save Profile</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://YOUR-SUPABASE-PROJECT.supabase.co";
+    const SUPABASE_ANON_KEY = "YOUR-SUPABASE-ANON-KEY";
+
+    let supabase = null;
+    let currentUser = null;
+    let isSignUp = false;
+
+    let memoryUsers = [
+      { id: 'usr-001', name: 'Admin Account', email: 'admin@company.com', department: 'System Admin', role: 'Administrator', status: 'Active' },
+      { id: 'usr-002', name: 'Account Mgr', email: 'am@company.com', department: 'Client Engagement', role: 'Account Manager', status: 'Active' },
+      { id: 'usr-003', name: 'Jane VP', email: 'vp@company.com', department: 'Heads/VPs', role: 'VP for Client Engagement', status: 'Active' },
+      { id: 'usr-004', name: 'Compliance Head', email: 'compliance@company.com', department: 'Heads/VPs', role: 'Head of Compliance', status: 'Active' },
+      { id: 'usr-005', name: 'Senior Liaison', email: 'liaison@company.com', department: 'Compliance & Licensing', role: 'Senior Compliance Liaison', status: 'Active' }
+    ];
+
+    let memoryDRFs = [];
+
+    if (SUPABASE_URL !== "https://YOUR-SUPABASE-PROJECT.supabase.co") {
+      supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+
+    function toggleAuthMode() {
+      isSignUp = !isSignUp;
+      document.getElementById('auth-title').innerText = isSignUp ? 'Create Staff Account' : 'Sign In to DRF Portal';
+      document.getElementById('auth-submit-btn').innerText = isSignUp ? 'Register Account' : 'Sign In';
+      document.getElementById('name-field').classList.toggle('hidden', !isSignUp);
+      document.getElementById('auth-toggle-btn').innerText = isSignUp ? 'Already have an account? Sign In' : 'New staff member? Register here';
+    }
+
+    async function handleAuth(e) {
+      e.preventDefault();
+      const email = document.getElementById('auth-email').value;
+      const password = document.getElementById('auth-password').value;
+      const name = document.getElementById('auth-name').value;
+
+      if (!supabase) {
+        let found = memoryUsers.find(u => u.email === email);
+        if (isSignUp) {
+          found = { id: 'usr-' + Date.now(), name: name, email: email, department: 'Unassigned', role: 'Pending Review', status: 'Pending' };
+          memoryUsers.push(found);
+          alert("Registration complete! Account is in 'Pending' state awaiting Admin activation.");
+        } else if (!found) {
+          found = { id: 'usr-001', name: name || email, email: email, department: 'System Admin', role: 'Administrator', status: 'Active' };
+          memoryUsers.push(found);
+        }
+        currentUser = found;
+        onLoginSuccess();
+        return;
+      }
+
+      try {
+        if (isSignUp) {
+          const { data, error } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
+          if (error) throw error;
+          alert("Account created successfully! Awaiting Administrator activation.");
+        } else {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          onLoginSuccess();
+        }
+      } catch (err) { alert("Authentication Error: " + err.message); }
+    }
+
+    function onLoginSuccess() {
+      document.getElementById('auth-card').classList.add('hidden');
+      document.getElementById('workspace').classList.remove('hidden');
+      document.getElementById('user-nav').classList.remove('hidden');
+
+      document.getElementById('user-display-name').innerText = currentUser.name;
+      document.getElementById('user-display-role').innerText = `${currentUser.department} • ${currentUser.role}`;
+
+      if (currentUser.role === 'Administrator') {
+        document.getElementById('admin-console').classList.remove('hidden');
+        renderUsers();
+      }
+      switchTab('submit');
+      renderDRFs();
+    }
+
+    function handleLogout() {
+      if (supabase) supabase.auth.signOut();
+      location.reload();
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.className = 'tab-btn px-4 py-2 text-xs transition bg-slate-100 text-slate-600 font-medium');
+      document.getElementById(`tab-${tab}`).className = 'tab-btn px-4 py-2 text-xs transition bg-blue-600 text-white font-bold';
+
+      document.getElementById('pane-submit').classList.toggle('hidden', tab !== 'submit');
+      document.getElementById('pane-queue').classList.toggle('hidden', tab !== 'queue');
+      document.getElementById('pane-master').classList.toggle('hidden', tab !== 'master');
+    }
+
+    function handleCSVUpload(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      document.getElementById('file-name-display').innerText = "Loaded: " + file.name;
+
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+          if (results.data.length > 0) {
+            const row = results.data[0];
+            document.getElementById('drf-company').value = row['Company/Registered Name'] || row['Company'] || '';
+            document.getElementById('drf-branch').value = row['Branch Name'] || row['Branch'] || '';
+            document.getElementById('drf-trade').value = row['Trade/Business Name'] || '';
+            document.getElementById('drf-tin').value = row['TIN'] || '';
+            document.getElementById('drf-computer').value = row['Computer Name'] || '';
+            document.getElementById('drf-serial').value = row['POS Machine Serial No.'] || '';
+            document.getElementById('drf-brand').value = row['Machine Brand'] || '';
+            document.getElementById('drf-model').value = row['Machine Model'] || '';
+          }
+        }
+      });
+    }
+
+    function submitDRF(e) {
+      e.preventDefault();
+      const newDRF = {
+        id: 'DRF-' + Math.floor(1000 + Math.random() * 9000),
+        company: document.getElementById('drf-company').value,
+        branch: document.getElementById('drf-branch').value,
+        tin: document.getElementById('drf-tin').value,
+        computer: document.getElementById('drf-computer').value.toUpperCase(),
+        serial: document.getElementById('drf-serial').value,
+        brand: document.getElementById('drf-brand').value,
+        model: document.getElementById('drf-model').value,
+        execFlag: document.getElementById('drf-exec-flag').checked,
+        verifier: currentUser.name,
+        verifierRole: currentUser.role,
+        vpApproval: 'Pending',
+        complianceApproval: 'Pending',
+        status: 'In Approval Chain'
+      };
+
+      memoryDRFs.unshift(newDRF);
+      alert("DRF Request verified and submitted into approval queue!");
+      document.getElementById('drf-form').reset();
+      document.getElementById('file-name-display').innerText = '';
+      switchTab('queue');
+      renderDRFs();
+    }
+
+    function renderDRFs() {
+      const qBody = document.getElementById('queue-table-body');
+      const mBody = document.getElementById('master-table-body');
+      qBody.innerHTML = '';
+      mBody.innerHTML = '';
+
+      memoryDRFs.forEach(item => {
+        qBody.innerHTML += `
+          <tr class="hover:bg-slate-50">
+            <td class="p-3 font-mono font-bold text-blue-600">${item.id}</td>
+            <td class="p-3 font-semibold">${item.company} <span class="text-slate-400">(${item.branch})</span></td>
+            <td class="p-3">${item.verifier}<br><span class="text-[10px] text-slate-400">${item.verifierRole}</span></td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${item.vpApproval === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">${item.vpApproval}</span></td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded text-[10px] font-bold ${item.complianceApproval === 'Approved' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">${item.complianceApproval}</span></td>
+            <td class="p-3 font-semibold">${item.status}</td>
+            <td class="p-3 text-right space-x-1">
+              ${currentUser.role === 'VP for Client Engagement' || currentUser.role === 'Administrator' ? `<button onclick="approveDRF('${item.id}', 'vp')" class="bg-emerald-600 text-white px-2.5 py-1 rounded text-[10px] font-bold">VP Approve</button>` : ''}
+              ${currentUser.role === 'Head of Compliance' || currentUser.role === 'Administrator' ? `<button onclick="approveDRF('${item.id}', 'comp')" class="bg-emerald-600 text-white px-2.5 py-1 rounded text-[10px] font-bold">Comp. Approve</button>` : ''}
+              ${(currentUser.role === 'Senior Compliance Liaison' || currentUser.role === 'Administrator') && item.vpApproval === 'Approved' && item.complianceApproval === 'Approved' ? `<button onclick="processLiaison('${item.id}')" class="bg-blue-600 text-white px-2.5 py-1 rounded text-[10px] font-bold">Process & Issue</button>` : ''}
+            </td>
+          </tr>
+        `;
+
+        if (item.status === 'Closed & Finished') {
+          mBody.innerHTML += `
+            <tr class="hover:bg-emerald-50/30">
+              <td class="p-3 font-mono font-bold">${item.id}</td>
+              <td class="p-3 font-bold text-slate-900">${item.company}</td>
+              <td class="p-3">${item.tin}</td>
+              <td class="p-3 font-mono">${item.computer}</td>
+              <td class="p-3 font-mono text-blue-700 font-bold">${item.posMin}</td>
+              <td class="p-3 font-mono">${item.ptuPermit}</td>
+              <td class="p-3 font-mono text-xs">${item.licenseKey}</td>
+              <td class="p-3"><span class="bg-blue-100 text-blue-800 text-[10px] px-2 py-0.5 rounded-full font-bold">Permit Applied</span> <span class="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">Licenses Generated</span></td>
+              <td class="p-3 text-right"><button onclick="window.print()" class="bg-slate-800 text-white px-2.5 py-1 rounded text-[10px] font-bold">Print DRF</button></td>
+            </tr>
+          `;
+        }
+      });
+    }
+
+    function approveDRF(id, type) {
+      const item = memoryDRFs.find(d => d.id === id);
+      if (type === 'vp') item.vpApproval = 'Approved';
+      if (type === 'comp') item.complianceApproval = 'Approved';
+      renderDRFs();
+    }
+
+    function processLiaison(id) {
+      const item = memoryDRFs.find(d => d.id === id);
+      const min = prompt("Enter POS MIN (Barter FPOS/RPOS):", "MIN-2026-9901");
+      const ptu = prompt("Enter PTU Permit Number:", "BIR-PTU-883391");
+      const key = prompt("Enter POS License Serial Key:", "LIC-8899-A1B2-C3D4");
+
+      if (min && ptu && key) {
+        item.posMin = min;
+        item.ptuPermit = ptu;
+        item.licenseKey = key;
+        item.status = 'Closed & Finished';
+        renderDRFs();
+        switchTab('master');
+        alert("DRF finalized with tags: [Permit Applied] & [Licenses Generated]");
+      }
+    }
+
+    function renderUsers() {
+      const body = document.getElementById('user-table-body');
+      body.innerHTML = '';
+      memoryUsers.forEach(u => {
+        body.innerHTML += `
+          <tr class="hover:bg-amber-50/50">
+            <td class="p-3 font-bold">${u.name}<br><span class="text-[10px] text-slate-400 font-normal">${u.email}</span></td>
+            <td class="p-3">${u.department}</td>
+            <td class="p-3 font-semibold text-blue-700">${u.role}</td>
+            <td class="p-3"><span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${u.status === 'Active' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}">${u.status}</span></td>
+            <td class="p-3 text-right space-x-1">
+              <button onclick="editUserRole('${u.id}')" class="bg-slate-800 text-white px-2 py-1 rounded text-[10px]">Role</button>
+              <button onclick="toggleUserStatus('${u.id}')" class="bg-red-100 text-red-700 px-2 py-1 rounded text-[10px] font-bold">${u.status === 'Active' ? 'Deactivate' : 'Activate'}</button>
+            </td>
+          </tr>
+        `;
+      });
+    }
+
+    function editUserRole(id) {
+      const u = memoryUsers.find(x => x.id === id);
+      const roles = ["Account Manager", "Business Development Manager", "Business Analyst", "Project Manager", "VP for Client Engagement", "Head of Compliance", "Senior Compliance Liaison", "Administrator"];
+      const choice = prompt("Select Role:\n1. Account Manager\n2. Business Development Manager\n3. Business Analyst\n4. Project Manager\n5. VP for Client Engagement\n6. Head of Compliance\n7. Senior Compliance Liaison\n8. Administrator");
+      if (choice && roles[choice - 1]) {
+        u.role = roles[choice - 1];
+        u.status = 'Active';
+        renderUsers();
+      }
+    }
+
+    function toggleUserStatus(id) {
+      const u = memoryUsers.find(x => x.id === id);
+      u.status = u.status === 'Active' ? 'Deactivated' : 'Active';
+      renderUsers();
+    }
+
+    function openProfileModal() {
+      document.getElementById('profile-name').value = currentUser.name;
+      document.getElementById('profile-email').value = currentUser.email;
+      document.getElementById('profile-dept-read').innerText = currentUser.department;
+      document.getElementById('profile-role-read').innerText = currentUser.role;
+      document.getElementById('profile-modal').classList.remove('hidden');
+    }
+
+    function closeProfileModal() {
+      document.getElementById('profile-modal').classList.add('hidden');
+    }
+
+    function handleProfileUpdate(e) {
+      e.preventDefault();
+      currentUser.name = document.getElementById('profile-name').value;
+      currentUser.email = document.getElementById('profile-email').value;
+      alert("Profile updated successfully!");
+      closeProfileModal();
+      onLoginSuccess();
+    }
+
+    function exportMasterCSV() {
+      const finished = memoryDRFs.filter(d => d.status === 'Closed & Finished');
+      if (finished.length === 0) {
+        alert("No finished DRFs available to export.");
+        return;
+      }
+      const csv = Papa.unparse(finished);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'DRF_Master_Consolidated_Sheet.csv';
+      a.click();
+    }
+  </script>
+</body>
+</html>
